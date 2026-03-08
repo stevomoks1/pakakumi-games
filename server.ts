@@ -949,7 +949,7 @@ function startGameLoop(wss: WebSocketServer) {
       }
     });
     
-  }, 100); // 10Hz update rate
+  }, 50); // 20Hz update rate
 }
 
 

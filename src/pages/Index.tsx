@@ -34,6 +34,42 @@ export default function Index() {
   const handleCashOutRef = useRef<((atMultiplier?: number) => Promise<void>) | null>(null);
   const userIdentifierRef = useRef<string>('');
   const userIdRef = useRef<string | null>(null);
+  const serverStartTimeRef = useRef<number | null>(null);
+  const gameStateRef = useRef(gameState);
+
+  useEffect(() => {
+    gameStateRef.current = gameState;
+  }, [gameState]);
+
+  useEffect(() => {
+    let animationFrameId: number;
+    
+    const updateLocalMultiplier = () => {
+      if (gameStateRef.current === 'PLAYING' && serverStartTimeRef.current !== null) {
+        const elapsed = Date.now() - serverStartTimeRef.current;
+        const localMultiplier = Math.pow(Math.E, 0.06 * (elapsed / 1000));
+        const rounded = Number(localMultiplier.toFixed(2));
+        
+        setMultiplier(prev => {
+            // Only update if it's actually different to avoid unnecessary renders
+            return rounded !== prev ? rounded : prev;
+        });
+
+        // Local Auto Cashout Check
+        const bet = currentBetRef.current;
+        const autoEnabled = autoCashoutEnabledRef.current;
+        if (bet && !bet.cashedOut && autoEnabled && bet.target > 0 && rounded >= bet.target) {
+           if (handleCashOutRef.current) {
+             handleCashOutRef.current(bet.target);
+           }
+        }
+      }
+      animationFrameId = requestAnimationFrame(updateLocalMultiplier);
+    };
+    
+    animationFrameId = requestAnimationFrame(updateLocalMultiplier);
+    return () => cancelAnimationFrame(animationFrameId);
+  }, []);
   
   // WebSocket Connection
   const ws = useRef<WebSocket | null>(null);
@@ -92,9 +128,18 @@ export default function Index() {
           const { gameState: newGameState, multiplier: newMultiplier, countdown: newCountdown, history: newHistory, crashPoint: serverCrashPoint, bots } = data.payload;
           
           setGameState(newGameState);
-          setMultiplier(newMultiplier);
           setCountdown(newCountdown);
           if (Array.isArray(newHistory)) setHistory(newHistory);
+          
+          if (newGameState === 'PLAYING') {
+            // Sync server start time
+            // ln(multiplier) / 0.06 = elapsed_seconds
+            const elapsedSeconds = Math.log(newMultiplier) / 0.06;
+            serverStartTimeRef.current = Date.now() - (elapsedSeconds * 1000);
+          } else {
+            serverStartTimeRef.current = null;
+            setMultiplier(newMultiplier);
+          }
           
           // Construct the new Live Bets list
           setLiveBets(prev => {
@@ -157,16 +202,6 @@ export default function Index() {
              
              isCashingOut.current = false;
              isPlacingBet.current = false;
-          }
-          
-          // Auto cashout check
-          const bet = currentBetRef.current;
-          const autoEnabled = autoCashoutEnabledRef.current;
-          
-          if (newGameState === 'PLAYING' && bet && !bet.cashedOut && autoEnabled && bet.target > 0 && newMultiplier >= bet.target) {
-             if (handleCashOutRef.current) {
-               handleCashOutRef.current(bet.target);
-             }
           }
         } else if (data.type === 'CHAT_MESSAGE') {
           setChatMessages(prev => [...prev, data.payload]);
@@ -688,7 +723,7 @@ export default function Index() {
         <header className="flex justify-between items-center px-4 py-3 border-b border-[#3a3a3a] relative">
           <div className="flex items-center gap-2 md:gap-4">
             <button className="md:hidden text-gray-400 hover:text-white" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}><Menu size={24} /></button>
-            <h1 className="text-2xl md:text-3xl font-black text-[#f58b2b] tracking-wider" style={{ fontFamily: 'Impact, sans-serif' }}>PAKAKUMI</h1>
+            <h1 className="text-base md:text-3xl font-black text-[#f58b2b] tracking-wider" style={{ fontFamily: 'Impact, sans-serif' }}>PAKAKUMI</h1>
             <button 
               onClick={() => {
                 if (!user) {
