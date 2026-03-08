@@ -1,5 +1,7 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import Database from 'better-sqlite3';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -11,6 +13,9 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Supabase Setup
 let supabaseClient: any = null;
@@ -958,6 +963,15 @@ async function startServer() {
     });
     app.use(vite.middlewares);
     console.log('Vite server initialized.');
+  } else {
+    // Serve static files from the dist folder in production
+    const distPath = path.resolve(__dirname, 'dist');
+    app.use(express.static(distPath));
+    
+    // Fallback to index.html for SPA routing
+    app.get('*', (req, res) => {
+      res.sendFile(path.resolve(distPath, 'index.html'));
+    });
   }
 
   console.log(`Starting server on port ${PORT}...`);
