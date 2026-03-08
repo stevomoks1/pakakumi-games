@@ -154,6 +154,12 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
             const phone = data.phone_number || data.raw_callback?.response?.Phone || 'N/A';
             const formattedDate = new Date(data.updated_at).toLocaleString();
             setSuccessMessage(`${reference}\n${data.status}\n${phone}\nKES ${data.amount}\nReceipt: ${data.mpesa_receipt || 'N/A'}\n\n${data.result_desc || 'The service request is processed successfully.'}\n\n${formattedDate}`);
+            
+            // Update balance by adding the deposited amount to the current balance
+            if (onUpdateBalance) {
+              onUpdateBalance(balance + (data.amount || 0));
+            }
+
             setDepositInitiated(false);
             setIsDepositing(false);
             setCurrentReference(null);
