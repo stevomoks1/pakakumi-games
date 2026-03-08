@@ -819,6 +819,12 @@ async function startServer() {
             if (userId) {
                 userSockets.set(userId, ws);
             }
+        } else if (data.type === 'CHAT_MESSAGE') {
+            // Broadcast chat message to all clients
+            broadcast(wss, {
+                type: 'CHAT_MESSAGE',
+                payload: data.payload
+            });
         }
       } catch (e) {
         // Ignore non-JSON messages

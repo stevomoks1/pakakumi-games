@@ -168,6 +168,8 @@ export default function Index() {
                handleCashOutRef.current(bet.target);
              }
           }
+        } else if (data.type === 'CHAT_MESSAGE') {
+          setChatMessages(prev => [...prev, data.payload]);
         }
       } catch (e) {
         console.error('Error parsing WS message', e);
@@ -451,7 +453,14 @@ export default function Index() {
       message: chatInput.trim()
     };
     
-    setChatMessages(prev => [...prev, newMessage]);
+    // Send to server via WebSocket
+    if (ws.current?.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({
+        type: 'CHAT_MESSAGE',
+        payload: newMessage
+      }));
+    }
+    
     setChatInput('');
   };
 
