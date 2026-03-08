@@ -12,7 +12,7 @@ export default function Index() {
   const [gameState, setGameState] = useState('WAITING'); // WAITING, PLAYING, CRASHED
   const [multiplier, setMultiplier] = useState(1.00);
   const [crashPoint, setCrashPoint] = useState<number>(0);
-  const [countdown, setCountdown] = useState(20.0);
+  const [countdown, setCountdown] = useState(30.0);
   const [liveBets, setLiveBets] = useState<{user: string, amount: number, target?: number, isStevo?: boolean, isCrashPoint?: boolean, isInsider?: boolean}[]>([]);
   
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -188,6 +188,13 @@ export default function Index() {
   const [history, setHistory] = useState<any[]>([]);
   const [betHistory, setBetHistory] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState('CHAT');
+  const [affiliateStats, setAffiliateStats] = useState<{
+    referral_code: string;
+    affiliate_balance: number;
+    total_referrals: number;
+    total_earnings: number;
+  } | null>(null);
+  const [isClaiming, setIsClaiming] = useState(false);
   
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
@@ -204,6 +211,32 @@ export default function Index() {
   // Betting Panel State
   const [betAmount, setBetAmount] = useState('10');
 
+  const fetchAffiliateStats = async (uid: string) => {
+    try {
+      const res = await axios.get(`/api/affiliate/stats/${uid}`);
+      setAffiliateStats(res.data);
+    } catch (err) {
+      console.error('Error fetching affiliate stats:', err);
+    }
+  };
+
+  const handleClaimAffiliate = async () => {
+    if (!user?.id || isClaiming) return;
+    setIsClaiming(true);
+    try {
+      const res = await axios.post('/api/affiliate/claim', { userId: user.id });
+      if (res.data.success) {
+        setProfile((prev: any) => prev ? { ...prev, balance: res.data.new_balance } : null);
+        fetchAffiliateStats(user.id);
+        alert(`Successfully claimed KES ${res.data.amount}!`);
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Failed to claim balance');
+    } finally {
+      setIsClaiming(false);
+    }
+  };
+
   const fetchProfile = async (userId: string) => {
     try {
       const { data, error } = await supabase
@@ -215,6 +248,7 @@ export default function Index() {
       if (!error) {
         setProfile(data);
         fetchBetHistory(userId);
+        fetchAffiliateStats(userId);
       }
     } catch (err) {
       console.error('Error fetching profile:', err);
@@ -240,6 +274,13 @@ export default function Index() {
         setProfile(null);
       }
     });
+
+    // Capture referral code from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const ref = urlParams.get('ref');
+    if (ref) {
+      localStorage.setItem('referral_code', ref);
+    }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const currentUser = session?.user ?? null;
@@ -764,12 +805,71 @@ export default function Index() {
                   <button onClick={() => setActiveTab('CHAT')} className={`flex-1 flex items-center justify-center border-b border-[#4a4a4a] transition-colors ${activeTab === 'CHAT' ? 'bg-[#f58b2b] text-white' : 'text-gray-500 hover:text-gray-300'}`}><span className="rotate-[-90deg] font-bold text-[10px] tracking-widest">CHAT</span></button>
                   <button onClick={() => setActiveTab('HISTORY')} className={`flex-1 flex items-center justify-center border-b border-[#4a4a4a] transition-colors ${activeTab === 'HISTORY' ? 'bg-[#f58b2b] text-white' : 'text-gray-500 hover:text-gray-300'}`}><span className="rotate-[-90deg] font-bold text-[10px] tracking-widest">HISTORY</span></button>
                   <button onClick={() => setActiveTab('PLAYERS')} className={`flex-1 flex items-center justify-center border-b border-[#4a4a4a] transition-colors ${activeTab === 'PLAYERS' ? 'bg-[#f58b2b] text-white' : 'text-gray-500 hover:text-gray-300'}`}><span className="rotate-[-90deg] font-bold text-[10px] tracking-widest">PLAYERS</span></button>
+                  <button onClick={() => setActiveTab('AFFILIATE')} className={`flex-1 flex items-center justify-center border-b border-[#4a4a4a] transition-colors ${activeTab === 'AFFILIATE' ? 'bg-[#f58b2b] text-white' : 'text-gray-500 hover:text-gray-300'}`}><span className="rotate-[-90deg] font-bold text-[10px] tracking-widest uppercase">Affiliate</span></button>
                   <button className="h-12 flex items-center justify-center text-gray-500 hover:text-gray-300"><Settings size={18} /></button>
                 </div>
                 <div className="flex-1 flex flex-col overflow-hidden">
                   {activeTab === 'CHAT' && (<div className="flex-1 overflow-y-auto p-4 space-y-3">{chatMessages.map((msg, i) => (<div key={i} className="text-xs"><span className="text-gray-500 mr-2">{msg.time}</span><span className="text-[#f58b2b] font-bold mr-2">{msg.user}:</span><span className="text-gray-300">{msg.message}</span></div>))}<div ref={chatEndRef} /></div>)}
                   {activeTab === 'HISTORY' && renderBetHistory()}
                   {activeTab === 'PLAYERS' && renderLiveBetsTable()}
+                  {activeTab === 'AFFILIATE' && (
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#3b3b3b]">
+                      {!user ? (
+                        <div className="h-full flex flex-col items-center justify-center text-center space-y-4">
+                          <Users className="w-12 h-12 text-gray-600" />
+                          <p className="text-gray-400 text-[10px] uppercase font-bold">Login to see stats</p>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="bg-[#2b2b2b] p-3 rounded border border-[#f58b2b]/20">
+                            <h3 className="text-[#f58b2b] font-bold text-[10px] uppercase mb-2">Referral Link</h3>
+                            <div className="flex gap-1">
+                              <input 
+                                readOnly 
+                                value={`${window.location.origin}/register?ref=${affiliateStats?.referral_code || ''}`}
+                                className="flex-1 bg-black/30 border border-white/10 rounded px-2 py-1.5 text-[10px] text-gray-300 outline-none"
+                              />
+                              <button 
+                                onClick={() => {
+                                  navigator.clipboard.writeText(`${window.location.origin}/register?ref=${affiliateStats?.referral_code || ''}`);
+                                  alert('Link copied!');
+                                }}
+                                className="bg-[#f58b2b] text-white px-2 py-1.5 rounded text-[10px] font-bold"
+                              >
+                                COPY
+                              </button>
+                            </div>
+                            <p className="text-[9px] text-gray-500 mt-2 italic">Earn 30% from every bet lost by your referrals!</p>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="bg-[#2b2b2b] p-2 rounded border border-white/5">
+                              <div className="text-[9px] text-gray-500 uppercase font-bold">Referrals</div>
+                              <div className="text-sm font-bold text-white">{affiliateStats?.total_referrals || 0}</div>
+                            </div>
+                            <div className="bg-[#2b2b2b] p-2 rounded border border-white/5">
+                              <div className="text-[9px] text-gray-500 uppercase font-bold">Earnings</div>
+                              <div className="text-sm font-bold text-white">KES {affiliateStats?.total_earnings?.toFixed(2) || '0.00'}</div>
+                            </div>
+                          </div>
+
+                          <div className="bg-[#f58b2b]/5 p-3 rounded border border-[#f58b2b]/20 flex flex-col gap-2">
+                            <div className="flex justify-between items-center">
+                              <div className="text-[9px] text-[#f58b2b] uppercase font-bold">Claimable</div>
+                              <div className="text-sm font-bold text-white">KES {affiliateStats?.affiliate_balance?.toFixed(2) || '0.00'}</div>
+                            </div>
+                            <button 
+                              disabled={!affiliateStats || affiliateStats.affiliate_balance <= 0 || isClaiming}
+                              onClick={handleClaimAffiliate}
+                              className="w-full bg-[#f58b2b] disabled:opacity-50 disabled:cursor-not-allowed text-white py-1.5 rounded font-bold text-[10px] uppercase shadow-lg shadow-[#f58b2b]/10"
+                            >
+                              {isClaiming ? 'CLAIMING...' : 'CLAIM EARNINGS'}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
                   {activeTab === 'CHAT' && (<div className="p-3 bg-[#333333] border-t border-[#4a4a4a] rounded-br">{user ? (<div className="flex gap-2 bg-[#222222] rounded-lg px-3 py-2 border border-[#4a4a4a] focus-within:border-[#f58b2b]/50 transition-colors"><input type="text" placeholder="Type a message..." className="flex-1 bg-transparent outline-none text-white text-base md:text-sm" value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') handleSendMessage(); }} /><button onClick={handleSendMessage} disabled={!chatInput.trim()} className="text-[#f58b2b] hover:text-[#ff9b3b] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"><Send size={18} /></button></div>) : (<div className="text-center py-1 text-xs text-gray-500 italic">You must be logged in to chat</div>)}</div>)}
                 </div>
               </div>
@@ -778,7 +878,7 @@ export default function Index() {
           <div className="hidden xl:flex w-96 bg-[#3b3b3b] rounded flex-col border border-[#4a4a4a] h-[calc(100vh-8rem)] sticky top-4 overflow-hidden">{renderLiveBetsTable()}</div>
         </div>
 
-        <footer className="bg-[#1a1a1a] py-2 px-4 text-center text-[10px] text-gray-500 border-t border-[#3a3a3a]">Must be 18+ to register or play. Please gamble responsibly. Licensed and authorised by BCLB under licence No. 0000674.</footer>
+        <footer className="bg-[#1a1a1a] py-2 px-4 text-center text-[10px] text-gray-500 border-t border-[#3a3a3a]">Must be 18+ to register or play. Please gamble responsibly. Licensed and authorised by BCLB under licence No. 58076465.</footer>
         <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} initialMode={authMode} />
         <WalletModal isOpen={isWalletModalOpen} onClose={() => { setIsWalletModalOpen(false); setPaymentNotification(null); }} balance={profile?.balance} onUpdateBalance={updateBalance} userId={user?.id} paymentNotification={paymentNotification} />
         <FAQModal isOpen={isFAQModalOpen} onClose={() => setIsFAQModalOpen(false)} />

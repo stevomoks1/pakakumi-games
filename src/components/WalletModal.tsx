@@ -250,6 +250,8 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
     setWithdrawalStatus('PROCESSING');
     setError(null);
     
+    const startTime = Date.now();
+    
     try {
         // Call backend to record withdrawal
         const res = await axios.post('/api/withdraw', {
@@ -261,13 +263,22 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
         if (res.data.success) {
             setReferenceId(res.data.reference);
             
+            // Ensure the loading screen stays for at least 5 seconds
+            const elapsedTime = Date.now() - startTime;
+            const remainingTime = Math.max(0, 5000 - elapsedTime);
+            
+            if (remainingTime > 0) {
+                await new Promise(resolve => setTimeout(resolve, remainingTime));
+            }
+
             // Update local balance
             const newBalance = balance - withdrawAmount;
             if (onUpdateBalance) {
                 await onUpdateBalance(newBalance);
             }
 
-            setSuccessMessage(`Success!\nWithdrawal Request Received! 💸\n\nYou've played like a pro! Your KES ${withdrawAmount.toLocaleString()} is being processed and will hit your M-Pesa within 24 hours.\n\nThe next big win is just a bet away—keep the momentum going!`);
+            const netAmount = withdrawAmount * 0.95;
+            setSuccessMessage(`Success!\nWithdrawal Request Received! 💸\n\nYou've played like a pro! Your KES ${netAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} is being processed and will hit your M-Pesa within 24 hours.\n\nThe next big win is just a bet away—keep the momentum going!`);
             setAmount('100');
             setWithdrawalStatus('SUCCESS');
         } else {

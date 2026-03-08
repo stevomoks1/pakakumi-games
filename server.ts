@@ -72,6 +72,15 @@ db.exec(`
     raw_response TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS affiliate_earnings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    referrer_id TEXT,
+    referred_id TEXT,
+    amount REAL,
+    bet_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // API Routes
@@ -274,12 +283,19 @@ app.post('/api/callback', async (req, res) => {
   if (checkoutRequestId) {
       console.log(`Looking up payment by CheckoutRequestID: ${checkoutRequestId}`);
       try {
-          const stmt = db.prepare('SELECT user_id, reference FROM payments WHERE checkout_request_id = ?');
+          const stmt = db.prepare('SELECT user_id, reference, status, amount FROM payments WHERE checkout_request_id = ?');
           const record = stmt.get(checkoutRequestId) as any;
           if (record) {
               userId = record.user_id;
               externalRef = record.reference; // Use our original reference!
-              console.log(`Found record in SQLite: userId=${userId}, ref=${externalRef}`);
+              const currentStatus = record.status;
+              console.log(`Found record in SQLite: userId=${userId}, ref=${externalRef}, currentStatus=${currentStatus}`);
+              
+              // If already successful, don't update balance again
+              if (currentStatus === 'Success') {
+                  console.log(`Payment ${externalRef} already marked as Success. Skipping balance update.`);
+                  return res.status(200).json({ success: true, message: 'Already processed' });
+              }
           } else {
               console.log(`No record found in SQLite for CheckoutRequestID: ${checkoutRequestId}`);
           }
@@ -294,14 +310,19 @@ app.post('/api/callback', async (req, res) => {
               if (supabase) {
                   const { data: sbRecord, error: sbError } = await supabase
                       .from('payments')
-                      .select('user_id, external_reference')
+                      .select('user_id, external_reference, status')
                       .eq('checkout_request_id', checkoutRequestId)
                       .single();
                   
                   if (sbRecord && !sbError) {
                       userId = sbRecord.user_id;
                       externalRef = sbRecord.external_reference;
-                      console.log(`Found record in Supabase: userId=${userId}, ref=${externalRef}`);
+                      console.log(`Found record in Supabase: userId=${userId}, ref=${externalRef}, status=${sbRecord.status}`);
+                      
+                      if (sbRecord.status === 'Success') {
+                          console.log(`Payment ${externalRef} already marked as Success in Supabase. Skipping.`);
+                          return res.status(200).json({ success: true, message: 'Already processed' });
+                      }
                   } else {
                       console.log(`No record found in Supabase for CheckoutRequestID: ${checkoutRequestId}`);
                   }
@@ -521,11 +542,30 @@ app.get('/api/payment/status/:reference', async (req, res) => {
                 try {
                     const supabase = getSupabase();
                     if (supabase) {
-                        const { data: profile } = await supabase.from('profiles').select('balance').eq('id', userId).single();
-                        if (profile) {
-                            const newBalance = parseFloat(profile.balance || 0) + parseFloat(amount || 0);
-                            await supabase.from('profiles').update({ balance: newBalance }).eq('id', userId);
-                            console.log(`[POLL] Updated balance for user ${userId} to ${newBalance}`);
+                        // Use a transaction-like approach by fetching current balance and updating
+                        const { data: profile, error: profileError } = await supabase
+                            .from('profiles')
+                            .select('balance')
+                            .eq('id', userId)
+                            .single();
+                        
+                        if (profile && !profileError) {
+                            const currentBalance = parseFloat(profile.balance || 0);
+                            const depositAmount = parseFloat(amount || 0);
+                            const newBalance = currentBalance + depositAmount;
+                            
+                            const { error: updateError } = await supabase
+                                .from('profiles')
+                                .update({ balance: newBalance })
+                                .eq('id', userId);
+                            
+                            if (!updateError) {
+                                console.log(`[POLL] Updated balance for user ${userId} to ${newBalance}`);
+                            } else {
+                                console.error('[POLL] Error updating balance:', updateError);
+                            }
+                        } else {
+                            console.error('[POLL] Error fetching profile for balance update:', profileError);
                         }
                     }
                 } catch (e) {
@@ -583,11 +623,20 @@ app.post('/api/bets', (req, res) => {
 });
 
 // Update bet (Cash Out or Loss)
-app.patch('/api/bets/:id', (req, res) => {
+app.patch('/api/bets/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { status, multiplier, profit, crash_point } = req.body;
 
+    // 1. Get the bet details first
+    const betStmt = db.prepare('SELECT user_id, amount FROM bets WHERE id = ?');
+    const bet = betStmt.get(id) as any;
+
+    if (!bet) {
+      return res.status(404).json({ error: 'Bet not found' });
+    }
+
+    // 2. Update the bet
     const stmt = db.prepare(`
       UPDATE bets 
       SET status = ?, multiplier = ?, profit = ?, crash_point = ?
@@ -595,9 +644,133 @@ app.patch('/api/bets/:id', (req, res) => {
     `);
     stmt.run(status, multiplier, profit, crash_point, id);
 
+    // 3. Handle Affiliate Commission if it's a loss
+    if (status === 'LOST') {
+      const userId = bet.user_id;
+      const lostAmount = bet.amount;
+      const commission = lostAmount * 0.30; // 30% commission
+
+      try {
+        const supabase = getSupabase();
+        if (supabase) {
+          // Find if this user was referred by someone
+          const { data: profile, error: profileError } = await supabase
+            .from('profiles')
+            .select('referred_by')
+            .eq('id', userId)
+            .single();
+
+          if (profile && profile.referred_by) {
+            const referrerId = profile.referred_by;
+            
+            // Record the earning in local DB
+            const earningStmt = db.prepare(`
+              INSERT INTO affiliate_earnings (referrer_id, referred_id, amount, bet_id)
+              VALUES (?, ?, ?, ?)
+            `);
+            earningStmt.run(referrerId, userId, commission, id);
+
+            // Update the referrer's affiliate balance in Supabase
+            const { data: referrerProfile, error: refError } = await supabase
+              .from('profiles')
+              .select('affiliate_balance')
+              .eq('id', referrerId)
+              .single();
+
+            if (referrerProfile) {
+              const newAffBalance = (referrerProfile.affiliate_balance || 0) + commission;
+              await supabase
+                .from('profiles')
+                .update({ affiliate_balance: newAffBalance })
+                .eq('id', referrerId);
+              
+              console.log(`Credited affiliate commission: ${commission} to ${referrerId} for user ${userId}`);
+            }
+          }
+        }
+      } catch (affError) {
+        console.error('Error processing affiliate commission:', affError);
+      }
+    }
+
     res.json({ success: true });
   } catch (error) {
     console.error('Update Bet Error:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// --- Affiliate Endpoints ---
+
+app.get('/api/affiliate/stats/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const supabase = getSupabase();
+    if (!supabase) return res.status(500).json({ error: 'Supabase not configured' });
+
+    // 1. Get referral code and balance from profile
+    const { data: profile, error: pError } = await supabase
+      .from('profiles')
+      .select('referral_code, affiliate_balance')
+      .eq('id', userId)
+      .single();
+
+    // 2. Count total referrals
+    const { count, error: cError } = await supabase
+      .from('profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('referred_by', userId);
+
+    // 3. Get total earnings from local DB
+    const earningsStmt = db.prepare('SELECT SUM(amount) as total FROM affiliate_earnings WHERE referrer_id = ?');
+    const earnings = earningsStmt.get(userId) as any;
+
+    res.json({
+      referral_code: profile?.referral_code || userId.substring(0, 8),
+      affiliate_balance: profile?.affiliate_balance || 0,
+      total_referrals: count || 0,
+      total_earnings: earnings?.total || 0
+    });
+  } catch (error) {
+    console.error('Affiliate Stats Error:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.post('/api/affiliate/claim', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const supabase = getSupabase();
+    if (!supabase) return res.status(500).json({ error: 'Supabase not configured' });
+
+    // 1. Get current balances
+    const { data: profile, error: pError } = await supabase
+      .from('profiles')
+      .select('balance, affiliate_balance')
+      .eq('id', userId)
+      .single();
+
+    if (!profile || profile.affiliate_balance <= 0) {
+      return res.status(400).json({ error: 'No affiliate balance to claim' });
+    }
+
+    const claimAmount = profile.affiliate_balance;
+    const newBalance = (profile.balance || 0) + claimAmount;
+
+    // 2. Update balances
+    const { error: uError } = await supabase
+      .from('profiles')
+      .update({ 
+        balance: newBalance,
+        affiliate_balance: 0 
+      })
+      .eq('id', userId);
+
+    if (uError) throw uError;
+
+    res.json({ success: true, amount: claimAmount, new_balance: newBalance });
+  } catch (error) {
+    console.error('Affiliate Claim Error:', error);
     res.status(500).json({ error: 'Internal Server Error' });
   }
 });
@@ -620,7 +793,7 @@ app.get('/api/bets/history/:userId', (req, res) => {
 let gameState: 'WAITING' | 'PLAYING' | 'CRASHED' = 'WAITING';
 let multiplier = 1.00;
 let crashPoint = 2.00;
-let countdown = 20.0;
+let countdown = 30.0;
 let startTime: number | null = null;
 let history: any[] = [];
 let currentBots: { user: string; amount: number; target: number }[] = [];
@@ -747,7 +920,7 @@ function startGameLoop(wss: WebSocketServer) {
           // Reset timer
           setTimeout(() => {
             gameState = 'WAITING';
-            countdown = 20.0;
+            countdown = 30.0;
             multiplier = 1.00;
             // Generate next crash point immediately for the new round
             crashPoint = generateCrashPoint();

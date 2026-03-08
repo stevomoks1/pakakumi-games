@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import TermsModal from './TermsModal';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -15,6 +16,15 @@ export default function AuthModal({ isOpen, onClose, initialMode }: AuthModalPro
   const [referralCode, setReferralCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [isTermsOpen, setIsTermsOpen] = useState(false);
+
+  useEffect(() => {
+    const savedRef = localStorage.getItem('referral_code');
+    if (savedRef) {
+      setReferralCode(savedRef);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     setMode(initialMode);
@@ -35,6 +45,9 @@ export default function AuthModal({ isOpen, onClose, initialMode }: AuthModalPro
 
     try {
       if (mode === 'register') {
+        if (!termsAccepted) {
+          throw new Error('You must accept the Terms and Conditions to register.');
+        }
         if (phone.length !== 9) {
           throw new Error('Please enter a valid 9-digit phone number.');
         }
@@ -76,12 +89,56 @@ export default function AuthModal({ isOpen, onClose, initialMode }: AuthModalPro
         // Optional: Create profile entry if it doesn't exist
         // This helps with the phone number uniqueness check above
         if (data.user) {
-          await supabase.from('profiles').upsert({
+          // Find the referrer if code is provided
+          let referredById = null;
+          if (referralCode) {
+            const { data: referrer } = await supabase
+              .from('profiles')
+              .select('id')
+              .eq('referral_code', referralCode)
+              .maybeSingle();
+            if (referrer) {
+              referredById = referrer.id;
+            }
+          }
+
+          const myReferralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+          // Note: We store email in auth.users, but if the profiles table has an email column, we store it there too.
+          // Based on our check, the profiles table only has: id, phone_number, balance, created_at
+          // We will try to upsert what we can.
+          const profileData: any = {
             id: data.user.id,
             phone_number: `+254${phone}`,
-            email: email,
-            balance: 0.00
-          });
+            balance: 0.00,
+          };
+
+          // If the user has added these columns, they will be saved. 
+          // If not, Supabase will ignore them if we use a flexible approach or fail if strict.
+          // To be safe and follow the user's request to "make sure each field is stored in the correct column",
+          // we include them here. If they are missing from the DB, the user needs to add them.
+          profileData.referral_code = myReferralCode;
+          profileData.referred_by = referredById;
+          profileData.affiliate_balance = 0.00;
+          // Note: 'email' column is also often desired in profiles for easier querying
+          profileData.email = email;
+
+          const { error: upsertError } = await supabase.from('profiles').upsert(profileData);
+          
+          if (upsertError) {
+            console.error('Profile upsert error:', upsertError);
+            // If it fails because of missing columns, try a fallback with only known columns
+            if (upsertError.message.includes('column') && upsertError.message.includes('does not exist')) {
+              await supabase.from('profiles').upsert({
+                id: data.user.id,
+                phone_number: `+254${phone}`,
+                balance: 0.00
+              });
+            }
+          }
+          
+          // Clear saved referral code after use
+          localStorage.removeItem('referral_code');
         }
 
         alert('Registration successful! Please login.');
@@ -180,10 +237,27 @@ export default function AuthModal({ isOpen, onClose, initialMode }: AuthModalPro
               </div>
             )}
 
+            {mode === 'register' && (
+              <div className="flex items-start gap-2 py-2">
+                <input
+                  id="terms"
+                  type="checkbox"
+                  checked={termsAccepted}
+                  onChange={(e) => setTermsAccepted(e.target.checked)}
+                  className="mt-1 w-4 h-4 rounded border-gray-400 bg-[#555555] text-[#f58b2b] focus:ring-[#f58b2b]"
+                />
+                <label htmlFor="terms" className="text-xs text-white leading-tight cursor-pointer">
+                  I agree to the <button type="button" onClick={() => setIsTermsOpen(true)} className="text-[#f58b2b] hover:underline">Terms and Conditions</button> and I am at least 18 years old.
+                </label>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-gradient-to-b from-[#4ea1f3] to-[#2575fc] hover:from-[#5eb1ff] hover:to-[#3585ff] text-white font-bold py-3 rounded mt-2 shadow-lg transition-all"
+              className={`w-full bg-gradient-to-b from-[#4ea1f3] to-[#2575fc] hover:from-[#5eb1ff] hover:to-[#3585ff] text-white font-bold py-3 rounded mt-2 shadow-lg transition-all ${
+                loading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
             >
               {loading ? 'Processing...' : (mode === 'login' ? 'LOGIN' : 'JOIN PAKAKUMI')}
             </button>
@@ -196,10 +270,6 @@ export default function AuthModal({ isOpen, onClose, initialMode }: AuthModalPro
           </form>
 
           <div className="mt-6 text-center text-sm text-white">
-            <p className="mb-4">
-              By using this platform I attest that I am at least 18 years old and have read {mode === 'login' ? 'and agree to ' : ''}the <a href="#" className="text-[#f58b2b] hover:underline">Terms of Service</a>
-            </p>
-            
             {mode === 'login' ? (
               <p>
                 You don't have an account? <button onClick={() => toggleMode('register')} className="text-[#f58b2b] hover:underline">Sign Up now</button>
@@ -212,6 +282,8 @@ export default function AuthModal({ isOpen, onClose, initialMode }: AuthModalPro
           </div>
         </div>
       </div>
+      
+      <TermsModal isOpen={isTermsOpen} onClose={() => setIsTermsOpen(false)} />
     </div>
   );
 }

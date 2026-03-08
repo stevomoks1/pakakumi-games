@@ -65,30 +65,33 @@ export type Database = {
       profiles: {
         Row: {
           created_at: string
-          email: string
           id: string
-          name: string
-          phone: string
-          referral_code: string | null
+          phone_number: string | null
           balance: number | null
+          referral_code: string | null
+          referred_by: string | null
+          affiliate_balance: number | null
+          email: string | null
         }
         Insert: {
           created_at?: string
-          email: string
           id: string
-          name: string
-          phone: string
-          referral_code?: string | null
+          phone_number?: string | null
           balance?: number | null
+          referral_code?: string | null
+          referred_by?: string | null
+          affiliate_balance?: number | null
+          email?: string | null
         }
         Update: {
           created_at?: string
-          email?: string
           id?: string
-          name?: string
-          phone?: string
-          referral_code?: string | null
+          phone_number?: string | null
           balance?: number | null
+          referral_code?: string | null
+          referred_by?: string | null
+          affiliate_balance?: number | null
+          email?: string | null
         }
         Relationships: []
       }

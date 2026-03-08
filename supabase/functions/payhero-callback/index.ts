@@ -70,6 +70,8 @@ serve(async (req) => {
 
     const { data: existing } = await existingQuery.maybeSingle();
 
+    let shouldUpdateBalance = false;
+
     if (existing) {
       userId = existing.user_id;
       // Only process if it wasn't already marked as Success
@@ -85,7 +87,11 @@ serve(async (req) => {
               updated_at: new Date().toISOString(),
             })
             .eq("id", existing.id);
-          if (updateError) console.error("DB update error:", updateError);
+          if (updateError) {
+            console.error("DB update error:", updateError);
+          } else if (isSuccess) {
+            shouldUpdateBalance = true;
+          }
       } else {
           console.log("Payment already marked as Success, skipping update.");
       }
@@ -114,11 +120,15 @@ serve(async (req) => {
         checkout_request_id: checkoutRequestId || null,
         raw_callback: body,
       });
-      if (insertError) console.error("DB insert error:", insertError);
+      if (insertError) {
+        console.error("DB insert error:", insertError);
+      } else if (isSuccess) {
+        shouldUpdateBalance = true;
+      }
     }
 
-    // If successful, update user balance
-    if (isSuccess && userId) {
+    // If successful and we haven't processed this success yet, update user balance
+    if (shouldUpdateBalance && userId) {
         try {
             const { data: profile, error: fetchError } = await supabase
                 .from('profiles')
