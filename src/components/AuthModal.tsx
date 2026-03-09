@@ -171,7 +171,7 @@ export default function AuthModal({ isOpen, onClose, initialMode }: AuthModalPro
 
         <div className="p-8">
           <h2 className="text-2xl font-bold text-white text-center mb-6">
-            {mode === 'login' ? 'Log Into Pakakumi' : 'Sign Up Instantly'}
+            {mode === 'login' ? 'Log Into Jetpesa' : 'Sign Up Instantly'}
           </h2>
 
           {error && (
@@ -259,7 +259,7 @@ export default function AuthModal({ isOpen, onClose, initialMode }: AuthModalPro
                 loading ? 'opacity-50 cursor-not-allowed' : ''
               }`}
             >
-              {loading ? 'Processing...' : (mode === 'login' ? 'LOGIN' : 'JOIN PAKAKUMI')}
+              {loading ? 'Processing...' : (mode === 'login' ? 'LOGIN' : 'JOIN JETPESA')}
             </button>
 
             {mode === 'login' && (

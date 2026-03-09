@@ -555,6 +555,7 @@ export default function Index() {
   ]);
   const [chatInput, setChatInput] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
 
   const maskIdentifier = (val: string) => {
     if (!val) return '';
@@ -573,8 +574,8 @@ export default function Index() {
   };
 
   useEffect(() => {
-    if (activeTab === 'CHAT') {
-      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (activeTab === 'CHAT' && chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
   }, [chatMessages, activeTab]);
 
@@ -723,7 +724,7 @@ export default function Index() {
         <header className="flex justify-between items-center px-4 py-3 border-b border-[#3a3a3a] relative">
           <div className="flex items-center gap-2 md:gap-4">
             <button className="md:hidden text-gray-400 hover:text-white" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}><Menu size={24} /></button>
-            <h1 className="text-base md:text-3xl font-black text-[#f58b2b] tracking-wider" style={{ fontFamily: 'Impact, sans-serif' }}>PAKAKUMI</h1>
+            <h1 className="text-base md:text-3xl font-black text-[#f58b2b] tracking-wider" style={{ fontFamily: 'Impact, sans-serif' }}>JETPESA</h1>
             <button 
               onClick={() => {
                 if (!user) {
@@ -834,7 +835,7 @@ export default function Index() {
 
             <div className="flex flex-col gap-4">
               <div className="text-center text-sm font-bold text-white">For assistance, contact us on <span className="text-[#f58b2b]">0743999333</span></div>
-              <div className="bg-[#f58b2b] rounded-lg p-4 flex items-center justify-between relative overflow-hidden h-32"><div className="z-10 w-1/2"><h3 className="text-2xl font-black text-white italic leading-tight">Chanua Mbogi Tukujenge 30% Per Referral!</h3></div><div className="z-10 text-right"><p className="text-xl font-black text-white italic">Omoka Na Pakakumi Affiliate Program</p></div><div className="absolute top-2 right-2 bg-white/20 rounded-full w-6 h-6 flex items-center justify-center text-[10px] font-bold text-white border border-white/40">18+</div><div className="absolute inset-0 bg-gradient-to-r from-transparent to-black/20"></div><img src="https://picsum.photos/seed/pakakumi/800/200" className="absolute inset-0 w-full h-full object-cover opacity-30 mix-blend-overlay" alt="Banner" referrerPolicy="no-referrer" /></div>
+              <div className="bg-[#f58b2b] rounded-lg p-4 flex items-center justify-between relative overflow-hidden h-32"><div className="z-10 w-1/2"><h3 className="text-2xl font-black text-white italic leading-tight">Chanua Mbogi Tukujenge 30% Per Referral!</h3></div><div className="z-10 text-right"><p className="text-xl font-black text-white italic">Omoka Na Jetpesa Affiliate Program</p></div><div className="absolute top-2 right-2 bg-white/20 rounded-full w-6 h-6 flex items-center justify-center text-[10px] font-bold text-white border border-white/40">18+</div><div className="absolute inset-0 bg-gradient-to-r from-transparent to-black/20"></div><img src="https://picsum.photos/seed/jetpesa/800/200" className="absolute inset-0 w-full h-full object-cover opacity-30 mix-blend-overlay" alt="Banner" referrerPolicy="no-referrer" /></div>
               <div className="flex bg-[#3b3b3b] rounded border border-[#4a4a4a] h-80">
                 <div className="w-12 border-r border-[#4a4a4a] flex flex-col">
                   <button onClick={() => setActiveTab('CHAT')} className={`flex-1 flex items-center justify-center border-b border-[#4a4a4a] transition-colors ${activeTab === 'CHAT' ? 'bg-[#f58b2b] text-white' : 'text-gray-500 hover:text-gray-300'}`}><span className="rotate-[-90deg] font-bold text-[10px] tracking-widest">CHAT</span></button>
@@ -844,7 +845,7 @@ export default function Index() {
                   <button className="h-12 flex items-center justify-center text-gray-500 hover:text-gray-300"><Settings size={18} /></button>
                 </div>
                 <div className="flex-1 flex flex-col overflow-hidden">
-                  {activeTab === 'CHAT' && (<div className="flex-1 overflow-y-auto p-4 space-y-3">{chatMessages.map((msg, i) => (<div key={i} className="text-xs"><span className="text-gray-500 mr-2">{msg.time}</span><span className="text-[#f58b2b] font-bold mr-2">{msg.user}:</span><span className="text-gray-300">{msg.message}</span></div>))}<div ref={chatEndRef} /></div>)}
+                  {activeTab === 'CHAT' && (<div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-3">{chatMessages.map((msg, i) => (<div key={i} className="text-xs"><span className="text-gray-500 mr-2">{msg.time}</span><span className="text-[#f58b2b] font-bold mr-2">{msg.user}:</span><span className="text-gray-300">{msg.message}</span></div>))}<div ref={chatEndRef} /></div>)}
                   {activeTab === 'HISTORY' && renderBetHistory()}
                   {activeTab === 'PLAYERS' && renderLiveBetsTable()}
                   {activeTab === 'AFFILIATE' && (

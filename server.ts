@@ -124,6 +124,24 @@ app.post('/api/withdraw', async (req, res) => {
     const stmt = db.prepare('INSERT INTO withdrawals (user_id, amount, phone_number, reference, status) VALUES (?, ?, ?, ?, ?)');
     const result = stmt.run(user_id, amount, phone_number || '', reference, 'Pending');
     
+    const supabase = getSupabase();
+    if (supabase) {
+      const { error: supabasePayError } = await supabase
+        .from('withdrawals')
+        .insert({
+          user_id: user_id,
+          amount: amount,
+          status: 'PENDING',
+          external_reference: reference,
+          phone_number: phone_number || '',
+          updated_at: new Date().toISOString()
+        });
+      
+      if (supabasePayError) {
+        console.error('Error saving withdrawal to Supabase:', supabasePayError);
+      }
+    }
+
     res.json({ 
       success: true, 
       message: 'Withdrawal request received', 
@@ -895,7 +913,7 @@ function broadcast(wss: WebSocketServer, data: any) {
 function startGameLoop(wss: WebSocketServer) {
   setInterval(() => {
     if (gameState === 'WAITING') {
-      countdown -= 0.1;
+      countdown -= 0.05; // Adjusted for 50ms interval (20 ticks/sec * 0.05 = 1 sec)
       if (countdown <= 0) {
         gameState = 'PLAYING';
         multiplier = 1.00;

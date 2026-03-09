@@ -4,7 +4,37 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
 
+const CountdownTimer = ({ createdAt }: { createdAt: string }) => {
+  const [timeLeft, setTimeLeft] = useState('');
 
+  React.useEffect(() => {
+    const calculateTimeLeft = () => {
+      const createdTime = new Date(createdAt).getTime();
+      const targetTime = createdTime + 24 * 60 * 60 * 1000; // 24 hours later
+      const now = new Date().getTime();
+      const difference = targetTime - now;
+
+      if (difference <= 0) {
+        return '00:00:00';
+      }
+
+      const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((difference % (1000 * 60)) / 1000);
+
+      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    };
+
+    setTimeLeft(calculateTimeLeft());
+    const timer = setInterval(() => {
+      setTimeLeft(calculateTimeLeft());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [createdAt]);
+
+  return <span className="text-[#f58b2b] font-mono text-[10px] ml-2 font-bold">{timeLeft}</span>;
+};
 
 interface WalletModalProps {
   isOpen: boolean;
@@ -17,7 +47,7 @@ interface WalletModalProps {
 
 export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBalance, userId, paymentNotification }: WalletModalProps) {
   const [activeTab, setActiveTab] = useState('DEPOSIT');
-  const [amount, setAmount] = useState('100');
+  const [amount, setAmount] = useState('10');
   const [isWithdrawing, setIsWithdrawing] = useState(false);
   const [isDepositing, setIsDepositing] = useState(false);
   const [withdrawalStatus, setWithdrawalStatus] = useState<'IDLE' | 'PROCESSING' | 'SUCCESS'>('IDLE');
@@ -29,6 +59,53 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
   const [rawResponse, setRawResponse] = useState<any>(null);
   const [showDebug, setShowDebug] = useState(false);
   const [currentReference, setCurrentReference] = useState<string | null>(null);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
+
+  // Fetch transactions when tab changes
+  React.useEffect(() => {
+    if (activeTab === 'TRANSACTIONS' && userId) {
+      fetchTransactions();
+    }
+  }, [activeTab, userId]);
+
+  const fetchTransactions = async () => {
+    if (!userId) return;
+    setIsLoadingTransactions(true);
+    try {
+      const [paymentsRes, withdrawalsRes] = await Promise.all([
+        supabase
+          .from('payments')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(50),
+        supabase
+          .from('withdrawals')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(50)
+      ]);
+
+      if (paymentsRes.error) throw paymentsRes.error;
+      if (withdrawalsRes.error) {
+        console.warn('Error fetching withdrawals (table might not exist yet):', withdrawalsRes.error);
+      }
+
+      const allTransactions = [
+        ...(paymentsRes.data || []).map(p => ({ ...p, type: 'DEPOSIT' })),
+        ...(withdrawalsRes.data || []).map(w => ({ ...w, type: 'WITHDRAWAL' }))
+      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+       .slice(0, 50);
+
+      setTransactions(allTransactions);
+    } catch (err) {
+      console.error('Error fetching transactions:', err);
+    } finally {
+      setIsLoadingTransactions(false);
+    }
+  };
 
   // Effect to handle external payment notifications via WebSocket
   React.useEffect(() => {
@@ -186,8 +263,8 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
   const handleDeposit = async () => {
     const depositAmount = parseFloat(amount);
 
-    if (isNaN(depositAmount) || depositAmount <= 0) {
-      setError('Please enter a valid amount.');
+    if (isNaN(depositAmount) || depositAmount < 10) {
+      setError('Minimum deposit amount is KES 10.');
       return;
     }
 
@@ -237,6 +314,11 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
   const handleWithdraw = async () => {
     const withdrawAmount = parseFloat(amount);
     
+    if (!phoneNumber || !/^(?:254|\+254|0)?([71][0-9]{8})$/.test(phoneNumber.replace(/\s/g, ''))) {
+      setError('Please enter a valid M-Pesa phone number.');
+      return;
+    }
+
     if (isNaN(withdrawAmount) || withdrawAmount <= 0) {
       setError('Please enter a valid amount.');
       return;
@@ -299,7 +381,7 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
     }
   };
 
-  const tabs = ['DEPOSIT', 'WITHDRAW'];
+  const tabs = ['DEPOSIT', 'WITHDRAW', 'TRANSACTIONS'];
 
   return (
     <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 overflow-y-auto">
@@ -525,6 +607,21 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
             ) : (
                 <div className="space-y-6">
                 <div>
+                    <label className="block text-white text-sm font-bold mb-3">M-Pesa Phone Number</label>
+                    <div className="relative">
+                    <input
+                        type="text"
+                        value={phoneNumber}
+                        onChange={(e) => {
+                        setPhoneNumber(e.target.value);
+                        setError(null);
+                        }}
+                        placeholder="e.g. 0712345678"
+                        className={`w-full bg-[#2b2b2b] border-2 ${error && error.includes('phone') ? 'border-red-500' : 'border-[#555555]'} text-white px-5 py-4 rounded-xl text-xl font-bold focus:outline-none focus:border-white/40 transition-colors`}
+                    />
+                    </div>
+                </div>
+                <div>
                     <label className="block text-white text-sm font-bold mb-3">Amount (KES)</label>
                     <div className="relative">
                     <input
@@ -534,7 +631,7 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
                         setAmount(e.target.value);
                         setError(null);
                         }}
-                        className={`w-full bg-[#2b2b2b] border-2 ${error ? 'border-red-500' : 'border-[#555555]'} text-white px-5 py-4 rounded-xl text-xl font-bold focus:outline-none focus:border-white/40 transition-colors`}
+                        className={`w-full bg-[#2b2b2b] border-2 ${error && !error.includes('phone') ? 'border-red-500' : 'border-[#555555]'} text-white px-5 py-4 rounded-xl text-xl font-bold focus:outline-none focus:border-white/40 transition-colors`}
                     />
                     </div>
                     {error && <p className="mt-2 text-red-500 text-xs font-bold">{error}</p>}
@@ -553,6 +650,53 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
                 </button>
                 </div>
             )
+          ) : activeTab === 'TRANSACTIONS' ? (
+            <div className="space-y-4">
+              <h3 className="text-white font-bold text-lg mb-4">Transaction History</h3>
+              {isLoadingTransactions ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 size={32} className="animate-spin text-[#f58b2b]" />
+                </div>
+              ) : transactions.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">
+                  <p>No transactions found.</p>
+                </div>
+              ) : (
+                <div className="max-h-[400px] overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+                  {transactions.map((tx) => (
+                    <div key={tx.id} className="bg-[#2b2b2b] p-4 rounded-xl border border-[#4a4a4a] flex justify-between items-center">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-xs font-bold px-2 py-1 rounded ${
+                            tx.status === 'SUCCESS' ? 'bg-green-500/20 text-green-400' :
+                            tx.status === 'FAILED' ? 'bg-red-500/20 text-red-400' :
+                            tx.type === 'WITHDRAWAL' && tx.status === 'PENDING' ? 'bg-[#4ea1f3]/20 text-[#4ea1f3]' :
+                            'bg-yellow-500/20 text-yellow-400'
+                          }`}>
+                            {tx.type === 'WITHDRAWAL' && tx.status === 'PENDING' ? 'PENDING' : tx.status}
+                          </span>
+                          {tx.type === 'WITHDRAWAL' && tx.status === 'PENDING' && <CountdownTimer createdAt={tx.created_at} />}
+                          <span className="text-gray-400 text-xs">
+                            {new Date(tx.created_at).toLocaleDateString()} {new Date(tx.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1 font-mono">
+                          {tx.external_reference || tx.mpesa_receipt || 'No Ref'}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className={`font-bold ${tx.type === 'WITHDRAWAL' ? 'text-[#4ea1f3]' : 'text-white'}`}>
+                          {tx.type === 'WITHDRAWAL' ? '-' : ''}KES {Number(tx.amount).toLocaleString()}
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          {tx.phone_number}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           ) : null}
         </div>
       </div>
