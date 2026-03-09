@@ -47,7 +47,7 @@ interface WalletModalProps {
 
 export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBalance, userId, paymentNotification }: WalletModalProps) {
   const [activeTab, setActiveTab] = useState('DEPOSIT');
-  const [amount, setAmount] = useState('10');
+  const [amount, setAmount] = useState('100');
   const [isWithdrawing, setIsWithdrawing] = useState(false);
   const [isDepositing, setIsDepositing] = useState(false);
   const [withdrawalStatus, setWithdrawalStatus] = useState<'IDLE' | 'PROCESSING' | 'SUCCESS'>('IDLE');
@@ -263,8 +263,8 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
   const handleDeposit = async () => {
     const depositAmount = parseFloat(amount);
 
-    if (isNaN(depositAmount) || depositAmount < 10) {
-      setError('Minimum deposit amount is KES 10.');
+    if (isNaN(depositAmount) || depositAmount < 100) {
+      setError('Minimum deposit amount is KES 100.');
       return;
     }
 
