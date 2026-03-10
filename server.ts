@@ -632,6 +632,10 @@ app.post('/api/bets', (req, res) => {
       return res.status(400).json({ error: 'User ID and amount are required' });
     }
 
+    if (amount > 3000) {
+      return res.status(400).json({ error: 'Maximum bet amount is KES 3,000' });
+    }
+
     const stmt = db.prepare(`
       INSERT INTO bets (user_id, amount, status)
       VALUES (?, ?, 'PLAYING')

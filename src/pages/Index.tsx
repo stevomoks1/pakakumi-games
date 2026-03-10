@@ -363,6 +363,12 @@ export default function Index() {
       return;
     }
 
+    if (amount > 3000) {
+      if (!isAuto) setBetError('Max bet is KES 3,000');
+      isPlacingBet.current = false;
+      return;
+    }
+
     if (amount > profile.balance) {
       if (!isAuto) setBetError('Insufficient balance');
       isPlacingBet.current = false;
