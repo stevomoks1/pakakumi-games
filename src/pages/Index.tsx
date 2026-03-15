@@ -115,10 +115,6 @@ export default function Index() {
         const data = JSON.parse(event.data);
         
         if (data.type === 'PAYMENT_UPDATE') {
-            console.log('Payment Update Received:', data.payload);
-            if (data.payload.raw_callback) {
-                console.log('Raw PayHero Callback Echo:', data.payload.raw_callback);
-            }
             setPaymentNotification(data.payload);
             // Refresh balance if success
             if (data.payload.status === 'SUCCESS' && userIdRef.current) {

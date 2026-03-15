@@ -250,7 +250,6 @@ app.post('/api/pay', async (req, res) => {
     res.json({
       success: true,
       message: 'STK Push initiated successfully',
-      data: response.data,
       reference: reference
     });
 
@@ -258,8 +257,7 @@ app.post('/api/pay', async (req, res) => {
     console.error('PayHero Error:', error.response?.data || error.message);
     res.status(500).json({ 
       success: false, 
-      message: 'Failed to initiate payment',
-      error: error.response?.data || error.message 
+      message: 'Failed to initiate payment'
     });
   }
 });
@@ -467,15 +465,14 @@ app.post('/api/callback', async (req, res) => {
                   amount: amount,
                   reference: externalRef,
                   mpesa_receipt: mpesaReceipt,
-                  message: isSuccess ? 'Payment received successfully!' : resultDesc,
-                  raw_callback: callbackData
+                  message: isSuccess ? 'Payment received successfully!' : resultDesc
               }
           }));
           console.log(`Notified user ${userId} via WebSocket.`);
       }
   }
   
-  res.status(200).json({ success: true, echo: callbackData });
+  res.status(200).json({ success: true });
 });
 
 app.get('/api/payment/check/:reference', async (req, res) => {
@@ -487,7 +484,7 @@ app.get('/api/payment/check/:reference', async (req, res) => {
     if (supabase) {
       const { data, error } = await supabase
         .from('payments')
-        .select('status, amount, raw_callback, result_desc, mpesa_receipt')
+        .select('status, amount, result_desc, mpesa_receipt')
         .eq('external_reference', reference)
         .maybeSingle();
         
@@ -605,15 +602,14 @@ app.get('/api/payment/status/:reference', async (req, res) => {
                         status: isSuccess ? 'SUCCESS' : 'FAILED',
                         amount: amount,
                         reference: reference,
-                        message: isSuccess ? 'Payment received successfully!' : 'Payment failed',
-                        raw_callback: statusData
+                        message: isSuccess ? 'Payment received successfully!' : 'Payment failed'
                     }
                 }));
             }
         }
     }
 
-    res.json({ success: true, data: statusData, parsedStatus: statusString });
+    res.json({ success: true, parsedStatus: statusString });
   } catch (error: any) {
     console.error('Status Check Error:', error.response?.data || error.message);
     res.status(500).json({ success: false, message: 'Failed to check status' });

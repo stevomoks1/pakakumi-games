@@ -56,8 +56,6 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
   const [error, setError] = useState<string | null>(null);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [depositInitiated, setDepositInitiated] = useState(false);
-  const [rawResponse, setRawResponse] = useState<any>(null);
-  const [showDebug, setShowDebug] = useState(false);
   const [currentReference, setCurrentReference] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
@@ -110,10 +108,6 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
   // Effect to handle external payment notifications via WebSocket
   React.useEffect(() => {
     if (paymentNotification) {
-        if ((paymentNotification as any).raw_callback) {
-            setRawResponse((paymentNotification as any).raw_callback);
-        }
-        
         const notifStatus = paymentNotification.status?.toUpperCase();
         
         if (notifStatus === 'SUCCESS') {
@@ -156,10 +150,6 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
           if (res.data.success && res.data.payment) {
             const data = res.data.payment;
             const status = data.status?.toUpperCase();
-            
-            if (data.raw_callback) {
-              setRawResponse(data.raw_callback);
-            }
 
             if (status === 'SUCCESS') {
               setSuccessMessage(`Payment Successful! 🎉\n\nPayment completed successfully!\n\nM-Pesa Receipt\n\n${data.mpesa_receipt || 'N/A'}\n\nReference\n\n${currentReference}`);
@@ -217,18 +207,17 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
         console.log(`Polling payment record for reference: ${reference} (${elapsed / 1000}s)`);
         const { data, error } = await supabase
           .from('payments')
-          .select('*')
+          .select('status, amount, phone_number, updated_at, mpesa_receipt, result_desc')
           .eq('external_reference', reference)
           .maybeSingle();
 
         if (error) {
           console.error('Error fetching payment record:', error);
         } else if (data) {
-          console.log('Payment record fetched:', data);
           
           const status = data.status?.toUpperCase();
           if (status === 'SUCCESS') {
-            const phone = data.phone_number || data.raw_callback?.response?.Phone || 'N/A';
+            const phone = data.phone_number || 'N/A';
             const formattedDate = new Date(data.updated_at).toLocaleString();
             setSuccessMessage(`${reference}\n${data.status}\n${phone}\nKES ${data.amount}\nReceipt: ${data.mpesa_receipt || 'N/A'}\n\n${data.result_desc || 'The service request is processed successfully.'}\n\n${formattedDate}`);
             
@@ -275,7 +264,6 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
 
     setIsDepositing(true);
     setError(null);
-    setRawResponse(null);
 
     try {
       const res = await axios.post('/api/pay', {
@@ -283,9 +271,6 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
         amount: depositAmount,
         user_id: userId
       });
-
-      setRawResponse(res.data);
-      console.log('API Response:', res.data);
 
       if (res.data.success) {
         toast.success('STK Push sent! Check your phone.');
@@ -301,9 +286,6 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
     } catch (err: any) {
       console.error(err);
       const responseData = err.response?.data;
-      if (responseData) {
-        setRawResponse(responseData);
-      }
       const errorMessage = responseData?.message || err.message || 'Failed to initiate deposit.';
       setError(errorMessage);
       toast.error(errorMessage);
@@ -392,7 +374,6 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
               onClose();
               setWithdrawalStatus('IDLE');
               setSuccessMessage(null);
-              setRawResponse(null);
           }}
           className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors z-10 p-2"
         >
@@ -474,24 +455,7 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
                  <p className="text-xs text-gray-400 animate-pulse">Waiting for confirmation...</p>
               </div>
 
-              {rawResponse && (
-                <div className="mt-4">
-                  <button 
-                    onClick={() => setShowDebug(!showDebug)}
-                    className="text-[10px] text-gray-500 hover:text-gray-400 font-bold uppercase tracking-widest flex items-center gap-1 mx-auto"
-                  >
-                    {showDebug ? 'Hide' : 'Show'} PayHero Response
-                  </button>
-                  
-                  {showDebug && (
-                    <div className="mt-2 p-3 bg-black/40 rounded-lg border border-white/10 overflow-x-auto text-left">
-                      <pre className="text-[10px] text-green-400 font-mono">
-                        {JSON.stringify(rawResponse, null, 2)}
-                      </pre>
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* Debug section removed for security */}
 
               <button 
                 onClick={() => {
@@ -558,24 +522,7 @@ export default function WalletModal({ isOpen, onClose, balance = 0, onUpdateBala
                 Secure payment via PayHero M-Pesa STK Push.
               </p>
 
-              {rawResponse && (
-                <div className="mt-4">
-                  <button 
-                    onClick={() => setShowDebug(!showDebug)}
-                    className="text-[10px] text-gray-500 hover:text-gray-400 font-bold uppercase tracking-widest flex items-center gap-1"
-                  >
-                    {showDebug ? 'Hide' : 'Show'} PayHero Response
-                  </button>
-                  
-                  {showDebug && (
-                    <div className="mt-2 p-3 bg-black/40 rounded-lg border border-white/10 overflow-x-auto">
-                      <pre className="text-[10px] text-green-400 font-mono">
-                        {JSON.stringify(rawResponse, null, 2)}
-                      </pre>
-                    </div>
-                  )}
-                </div>
-              )}
+              {/* Debug section removed for security */}
             </div>
           ) : activeTab === 'WITHDRAW' ? (
             withdrawalStatus === 'PROCESSING' ? (
